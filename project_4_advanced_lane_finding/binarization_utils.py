@@ -39,7 +39,7 @@ def thresh_frame_sobel(frame, kernel_size):
     sobel_mag = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
     sobel_mag = np.uint8(sobel_mag / np.max(sobel_mag) * 255)
 
-    _, sobel_mag = cv2.threshold(sobel_mag, 50, 1, cv2.THRESH_BINARY)
+    _, sobel_mag = cv2.threshold(sobel_mag, 30, 1, cv2.THRESH_BINARY)
 
     return sobel_mag.astype(bool)
 
@@ -91,7 +91,7 @@ def binarize(img, verbose=False):
         ax[0, 0].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         ax[0, 0].set_title('input_frame')
         ax[0, 0].set_axis_off()
-        ax[0, 0].set_axis_bgcolor('red')
+        # ax[0, 0].set_axis_bgcolor('red')
         ax[0, 1].imshow(eq_white_mask, cmap='gray')
         ax[0, 1].set_title('white mask')
         ax[0, 1].set_axis_off()

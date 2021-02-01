@@ -13,8 +13,8 @@ class Line:
     """
     Class to model a lane-line.
     """
-    def __init__(self, buffer_len=10):
 
+    def __init__(self, buffer_len=10):
         # flag to mark if the line was detected the last iteration
         self.detected = False
 
@@ -78,7 +78,11 @@ class Line:
     @property
     # average of polynomial coefficients of the last N iterations
     def average_fit(self):
-        return np.mean(self.recent_fits_pixel, axis=0)
+        try:
+            return np.mean(self.recent_fits_pixel, axis=0)
+        except:
+            return [0,0,0]
+
 
     @property
     # radius of curvature of the line (averaged)
@@ -90,10 +94,12 @@ class Line:
     @property
     # radius of curvature of the line (averaged)
     def curvature_meter(self):
-        y_eval = 0
-        coeffs = np.mean(self.recent_fits_meter, axis=0)
-        return ((1 + (2 * coeffs[0] * y_eval + coeffs[1]) ** 2) ** 1.5) / np.absolute(2 * coeffs[0])
-
+        try:
+            y_eval = 0
+            coeffs = np.mean(self.recent_fits_meter, axis=0)
+            return ((1 + (2 * coeffs[0] * y_eval + coeffs[1]) ** 2) ** 1.5) / np.absolute(2 * coeffs[0])
+        except:
+            return 0
 
 def get_fits_by_sliding_windows(birdeye_binary, line_lt, line_rt, n_windows=9, verbose=False):
     """
@@ -110,7 +116,7 @@ def get_fits_by_sliding_windows(birdeye_binary, line_lt, line_rt, n_windows=9, v
 
     # Assuming you have created a warped binary image called "binary_warped"
     # Take a histogram of the bottom half of the image
-    histogram = np.sum(birdeye_binary[height//2:-30, :], axis=0)
+    histogram = np.sum(birdeye_binary[height // 2:-30, :], axis=0)
 
     # Create an output image to draw on and  visualize the result
     out_img = np.dstack((birdeye_binary, birdeye_binary, birdeye_binary)) * 255
@@ -134,7 +140,7 @@ def get_fits_by_sliding_windows(birdeye_binary, line_lt, line_rt, n_windows=9, v
     rightx_current = rightx_base
 
     margin = 100  # width of the windows +/- margin
-    minpix = 50   # minimum number of pixels found to recenter window
+    minpix = 50  # minimum number of pixels found to recenter window
 
     # Create empty lists to receive left and right lane pixel indices
     left_lane_inds = []
@@ -198,6 +204,9 @@ def get_fits_by_sliding_windows(birdeye_binary, line_lt, line_rt, n_windows=9, v
     line_lt.update_line(left_fit_pixel, left_fit_meter, detected=detected)
     line_rt.update_line(right_fit_pixel, right_fit_meter, detected=detected)
 
+    if not detected:
+        return line_lt, line_rt, out_img
+
     # Generate x and y values for plotting
     ploty = np.linspace(0, height - 1, height)
     left_fitx = left_fit_pixel[0] * ploty ** 2 + left_fit_pixel[1] * ploty + left_fit_pixel[2]
@@ -243,11 +252,16 @@ def get_fits_by_previous_fits(birdeye_binary, line_lt, line_rt, verbose=False):
     nonzero_x = np.array(nonzero[1])
     margin = 100
     left_lane_inds = (
-    (nonzero_x > (left_fit_pixel[0] * (nonzero_y ** 2) + left_fit_pixel[1] * nonzero_y + left_fit_pixel[2] - margin)) & (
-    nonzero_x < (left_fit_pixel[0] * (nonzero_y ** 2) + left_fit_pixel[1] * nonzero_y + left_fit_pixel[2] + margin)))
+            (nonzero_x > (left_fit_pixel[0] * (nonzero_y ** 2) + left_fit_pixel[1] * nonzero_y + left_fit_pixel[
+                2] - margin)) & (
+                    nonzero_x < (left_fit_pixel[0] * (nonzero_y ** 2) + left_fit_pixel[1] * nonzero_y + left_fit_pixel[
+                2] + margin)))
     right_lane_inds = (
-    (nonzero_x > (right_fit_pixel[0] * (nonzero_y ** 2) + right_fit_pixel[1] * nonzero_y + right_fit_pixel[2] - margin)) & (
-    nonzero_x < (right_fit_pixel[0] * (nonzero_y ** 2) + right_fit_pixel[1] * nonzero_y + right_fit_pixel[2] + margin)))
+            (nonzero_x > (right_fit_pixel[0] * (nonzero_y ** 2) + right_fit_pixel[1] * nonzero_y + right_fit_pixel[
+                2] - margin)) & (
+                    nonzero_x < (
+                    right_fit_pixel[0] * (nonzero_y ** 2) + right_fit_pixel[1] * nonzero_y + right_fit_pixel[
+                2] + margin)))
 
     # Extract left and right line pixel positions
     line_lt.all_x, line_lt.all_y = nonzero_x[left_lane_inds], nonzero_y[left_lane_inds]
@@ -324,6 +338,9 @@ def draw_back_onto_the_road(img_undistorted, Minv, line_lt, line_rt, keep_state)
     """
     height, width, _ = img_undistorted.shape
 
+    if not line_lt.detected:
+        return img_undistorted, 0.0, 0.0, 0.0
+
     left_fit = line_lt.average_fit if keep_state else line_lt.last_fit_pixel
     right_fit = line_rt.average_fit if keep_state else line_rt.last_fit_pixel
 
@@ -342,6 +359,19 @@ def draw_back_onto_the_road(img_undistorted, Minv, line_lt, line_rt, keep_state)
 
     blend_onto_road = cv2.addWeighted(img_undistorted, 1., road_dewarped, 0.3, 0)
 
+    mean_color_lt = np.array([[[line_lt.all_x[i], line_lt.all_y[i]]] for i in range(0, len(line_lt.all_x))])
+    mean_color_rt = np.array([[[line_rt.all_x[i], line_rt.all_y[i]]] for i in range(0, len(line_rt.all_x))])
+
+    lt_dewarp = cv2.transform(mean_color_lt, Minv)
+    rt_dewarp = cv2.transform(mean_color_rt, Minv)
+
+    img_colors_lt = [np.mean(img_undistorted[i[0][0], i[0][1]]) for i in lt_dewarp]
+    img_colors_rt = [np.mean(img_undistorted[i[0][0], i[0][1]]) for i in rt_dewarp]
+
+    intensity_lt = np.max(img_colors_lt)
+    intensity_rt = np.max(img_colors_rt)
+    intensity_road = np.mean(img_undistorted[630, 450])
+
     # now separately draw solid lines to highlight them
     line_warp = np.zeros_like(img_undistorted)
     line_warp = line_lt.draw(line_warp, color=(255, 0, 0), average=keep_state)
@@ -354,7 +384,7 @@ def draw_back_onto_the_road(img_undistorted, Minv, line_lt, line_rt, keep_state)
 
     blend_onto_road = cv2.addWeighted(src1=lines_mask, alpha=0.8, src2=blend_onto_road, beta=0.5, gamma=0.)
 
-    return blend_onto_road
+    return blend_onto_road, intensity_lt, intensity_rt, intensity_road
 
 
 if __name__ == '__main__':
@@ -365,7 +395,6 @@ if __name__ == '__main__':
 
     # show result on test images
     for test_img in glob.glob('test_images/*.jpg'):
-
         img = cv2.imread(test_img)
 
         img_undistorted = undistort(img, mtx, dist, verbose=False)
@@ -374,12 +403,5 @@ if __name__ == '__main__':
 
         img_birdeye, M, Minv = birdeye(img_binary, verbose=False)
 
-        line_lt, line_rt, img_out = get_fits_by_sliding_windows(img_birdeye, line_lt, line_rt, n_windows=7, verbose=True)
-
-
-
-
-
-
-
-
+        line_lt, line_rt, img_out = get_fits_by_sliding_windows(img_birdeye, line_lt, line_rt, n_windows=7,
+                                                                verbose=True)
